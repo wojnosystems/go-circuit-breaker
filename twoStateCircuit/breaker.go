@@ -2,21 +2,23 @@ package twoStateCircuit
 
 import (
 	"github.com/wojnosystems/go-circuit-breaker/circuitTripping"
+	"github.com/wojnosystems/go-circuit-breaker/timeFactory"
 	"sync"
 	"time"
 )
 
-type State uint8
-
-const (
-	StateClosed State = iota
-	StateOpen
-)
-
 type Opts struct {
+	// FailureThreshold how many times to fail in a row before opening the circuit
 	FailureThreshold uint
-	OpenDuration     time.Duration
 
+	// FailureWindow length of time to record errors to consider whether the FailureThreshold has been met
+	// errors older than this are discarded
+	FailureWindow time.Duration
+
+	// OpenDuration is how long to stay in the open state before closing again
+	OpenDuration time.Duration
+
+	// OnStateChange if set, will emit the state the breaker is transitioning into
 	OnStateChange chan<- State
 }
 
@@ -24,18 +26,20 @@ type Opts struct {
 type Breaker struct {
 	breaker
 
-	opts          Opts
-	mu            sync.Mutex
-	state         State
-	errorCount    uint
-	openExpiresAt time.Time
-	lastError     error
-	nowFactory    nowFactory
+	opts  Opts
+	mu    sync.Mutex
+	state State
+
+	errorsOccurredAt []time.Time
+	openExpiresAt    time.Time
+	lastError        error
+	nowFactory       timeFactory.Now
 }
 
 func New(opts Opts) *Breaker {
 	return &Breaker{
-		opts: opts,
+		opts:             opts,
+		errorsOccurredAt: make([]time.Time, 0, opts.FailureThreshold),
 	}
 }
 
@@ -46,6 +50,8 @@ func (b *Breaker) now() time.Time {
 	return time.Now()
 }
 
+// Use the breaker, if closed, attempt the callback, if open, return the last error
+// automatically transitions state if necessary
 func (b *Breaker) Use(callback func() error) error {
 	if err := b.reCloseOrFailFast(); err != nil {
 		return err
@@ -68,7 +74,7 @@ func (b *Breaker) reCloseOrFailFast() error {
 		return b.lastError
 	}
 	b.state = StateClosed
-	b.errorCount = 0
+	b.errorsOccurredAt = b.errorsOccurredAt[0:0]
 	b.notifyStateChanged()
 	return nil
 }
@@ -92,11 +98,29 @@ func (b *Breaker) countErrorAndOpenIfNeeded(err error) {
 		return
 	}
 
-	b.errorCount++
-	if b.errorCount >= b.opts.FailureThreshold {
+	now := b.now()
+	b.errorsOccurredAt = removeExpiredErrors(b.errorsOccurredAt, b.opts.FailureWindow, now)
+	b.errorsOccurredAt = append(b.errorsOccurredAt, now)
+	if uint(len(b.errorsOccurredAt)) >= b.opts.FailureThreshold {
 		b.state = StateOpen
 		b.openExpiresAt = b.now().Add(b.opts.OpenDuration)
 		b.lastError = err.(*circuitTripping.Error).Unwrap()
 		b.notifyStateChanged()
 	}
+}
+
+func removeExpiredErrors(errorsOccurredIn []time.Time, failureWindow time.Duration, now time.Time) []time.Time {
+	invalidBefore := now.Add(-1 * failureWindow)
+	lastInvalidIndex := -1
+	for i, t := range errorsOccurredIn {
+		if t.Before(invalidBefore) {
+			lastInvalidIndex = i
+		}
+		break
+	}
+	if lastInvalidIndex == -1 {
+		return errorsOccurredIn
+	}
+	copy(errorsOccurredIn[:], errorsOccurredIn[lastInvalidIndex:])
+	return errorsOccurredIn
 }

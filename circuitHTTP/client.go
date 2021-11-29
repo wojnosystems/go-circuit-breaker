@@ -23,7 +23,7 @@ func defaultTrippedDecision(resp *http.Response, err error) error {
 	switch resp.StatusCode {
 	// TODO: custom errors for each condition
 	case http.StatusBadGateway, http.StatusInternalServerError, http.StatusRequestTimeout, http.StatusServiceUnavailable, http.StatusTooManyRequests:
-		return circuitTripping.New(errors.New("upstream service is down or is rate-limiting"))
+		return circuitTripping.New(errors.New("upstream service is down or is rateLimit-limiting"))
 	default:
 		return nil
 	}
