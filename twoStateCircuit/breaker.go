@@ -48,15 +48,13 @@ func New(opts Opts) *Breaker {
 
 // Use the breaker, if closed, attempt the callback, if open, return the last error
 // automatically transitions state if necessary
-func (b *Breaker) Use(callback func() error) error {
-	if err := b.reCloseOrFailFast(); err != nil {
-		return err
+func (b *Breaker) Use(callback func() error) (err error) {
+	if err = b.reCloseOrFailFast(); err != nil {
+		return
 	}
-
-	err := callback()
+	err = callback()
 	b.countErrorAndOpenIfNeeded(err)
-
-	return err
+	return
 }
 
 func (b *Breaker) reCloseOrFailFast() error {
@@ -91,11 +89,6 @@ func (b *Breaker) countErrorAndOpenIfNeeded(err error) {
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
-
-	if b.state != StateClosed {
-		// Not closed
-		return
-	}
 
 	if !b.opts.FailureLimiter.Allowed(1) {
 		b.lastError = err.(*circuitTripping.Error).Unwrap()
