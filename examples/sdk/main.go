@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/wojnosystems/go-circuit-breaker/circuitHTTP"
 	"github.com/wojnosystems/go-circuit-breaker/twoStateCircuit"
+	"github.com/wojnosystems/go-rate-limit/rateLimit"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -12,8 +13,12 @@ import (
 
 func main() {
 	breaker := twoStateCircuit.New(twoStateCircuit.Opts{
-		FailureThreshold: 2,
-		OpenDuration:     30 * time.Second,
+		FailureLimiter: rateLimit.NewTokenBucket(rateLimit.TokenBucketOpts{
+			Capacity:             2,
+			TokensAddedPerSecond: 2,
+			InitialTokens:        2,
+		}),
+		OpenDuration: 30 * time.Second,
 	})
 	s := &SDK{
 		baseUrl:    "https://example.com/api",

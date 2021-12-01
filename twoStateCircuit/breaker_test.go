@@ -10,7 +10,7 @@ import (
 
 var trippingError = circuitTripping.New(errors.New("tripping error"))
 
-var _ = Describe("Breaker", func() {
+var _ = Describe("Breaker.Use", func() {
 	When("used without errors", func() {
 		var (
 			subject     *Breaker
@@ -40,7 +40,42 @@ var _ = Describe("Breaker", func() {
 			Expect(stateChange).ShouldNot(Receive())
 		})
 	})
+	When("error threshold not met", func() {
+		var (
+			subject     *Breaker
+			stateChange chan State
+			options     Opts
+			startTime   time.Time
+		)
+		BeforeEach(func() {
+			startTime = time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC)
+			stateChange = make(chan State, 10)
+			options = Opts{
+				FailureLimiter: &tokenBucketAlwaysSucceeds{},
+				OpenDuration:   50 * time.Millisecond,
+				OnStateChange:  stateChange,
+				nowFactory: func() time.Time {
+					return startTime
+				},
+			}
+			subject = New(options)
 
+			_ = subject.Use(func() error {
+				return trippingError
+			})
+		})
+		It("calls the callback", func() {
+			called := false
+			_ = subject.Use(func() error {
+				called = true
+				return nil
+			})
+			Expect(called).Should(BeTrue())
+		})
+		It("does not transition", func() {
+			Eventually(stateChange).ShouldNot(Receive())
+		})
+	})
 	When("error threshold met", func() {
 		var (
 			subject     *Breaker
@@ -98,15 +133,3 @@ var _ = Describe("Breaker", func() {
 		})
 	})
 })
-
-type tokenBucketAlwaysFails struct{}
-
-func (b *tokenBucketAlwaysFails) Allowed(_ uint64) bool {
-	return false
-}
-
-type tokenBucketAlwaysSucceeds struct{}
-
-func (s *tokenBucketAlwaysSucceeds) Allowed(_ uint64) bool {
-	return true
-}

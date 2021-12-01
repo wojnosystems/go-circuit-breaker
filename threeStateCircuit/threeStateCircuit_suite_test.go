@@ -1,4 +1,4 @@
-package twoStateCircuit
+package threeStateCircuit
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestTwoStateCircuit(t *testing.T) {
+func TestThreeStateCircuit(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "TwoStateCircuit Suite")
+	RunSpecs(t, "ThreeStateCircuit Suite")
 }

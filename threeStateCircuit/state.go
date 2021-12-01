@@ -1,11 +1,12 @@
 //go:generate go-enum --file=$GOFILE -noprefix --prefix State
 
-package twoStateCircuit
+package threeStateCircuit
 
 // State allowed by the twoStateBreaker
 /* ENUM(
 Closed,
-Open
+Open,
+HalfOpen
 )
 */
 type State uint8
