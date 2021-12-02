@@ -33,119 +33,115 @@ type Opts struct {
 	nowFactory timeFactory.Now
 }
 
-type postClose func(b *Breaker, err error) (afterUnlock func())
-type postOpen func(b *Breaker) (afterUnlock func())
+type mutableState struct {
+	state         State
+	lastError     error
+	openExpiresAt time.Time
+}
 
 // Breaker is a live circuit breaker that only has 2 states: closed and open.
 // Use New to create a new Breaker, populated with options.
 type Breaker struct {
-	opts                Opts
-	mu                  sync.RWMutex
-	state               stateFunc
-	postCloseTripAction postClose
-	postOpenResetAction postOpen
-
-	openExpiresAt time.Time
-	lastError     error
+	opts Opts
+	mu   sync.RWMutex
+	mutableState
 }
 
 func New(opts Opts) *Breaker {
 	return &Breaker{
-		opts:                opts,
-		state:               stateClosed,
-		postCloseTripAction: postCloseTripTransitionAction,
-		postOpenResetAction: postOpenResetTransitionAction,
+		opts: opts,
+		mutableState: mutableState{
+			state: StateClosed,
+		},
 	}
 }
-
-type stateContext struct {
-	breaker  *Breaker
-	callback func() error
-}
-
-type stateFunc func(b *stateContext) error
 
 // Use the breaker, if closed, attempt the callback, if open, return the last error
 // automatically transitions state if necessary
 func (b *Breaker) Use(callback func() error) error {
-	b.mu.RLock()
-	stateF := b.state
-	b.mu.RUnlock()
-	return stateF(&stateContext{
-		breaker:  b,
-		callback: callback,
-	})
-}
+	{
+		stateCopy, now := b.copyCurrentState()
+		if stateCopy.state == StateOpen {
+			if stateCopy.openExpiresAt.After(now) {
+				// still in the open state, not expired
+				return stateCopy.lastError
+			}
 
-func stateClosed(b *stateContext) error {
-	err := b.callback()
+			b.transitionToClosedIfShould()
+		}
+	}
+
+	// at this point, we have either returned or we're in the closed state
+	err := callback()
 	if !circuitTripping.IsTripping(err) {
+		// error was nil or not tripping, just return
 		return err
 	}
-	afterUnlock := doNothing
-	b.breaker.mu.Lock()
-	defer func() {
-		b.breaker.mu.Unlock()
-		afterUnlock()
-	}()
-	afterUnlock = b.breaker.postCloseTripAction(b.breaker, err)
-	return err
+
+	unwrappedError := err.(*circuitTripping.Error).Unwrap()
+
+	// we encountered an error, we need to count this against our error threshold and transition if need be
+	b.recordErrorAndTransitionToOpenIfShould(unwrappedError)
+	return unwrappedError
+}
+
+func (b *Breaker) copyCurrentState() (currentState mutableState, now time.Time) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	currentState.state = b.state
+	currentState.openExpiresAt = b.openExpiresAt
+	currentState.lastError = b.lastError
+	now = b.opts.nowFactory.Get()
+	return
 }
 
 func doNothing() {}
 
-func postCloseTripTransitionAction(b *Breaker, err error) (afterUnlock func()) {
-	if !b.opts.FailureLimiter.Allowed(errorCost) {
-		b.lastError = err.(*circuitTripping.Error).Unwrap()
-		b.state = stateOpen
-		b.postCloseTripAction = postCloseTripDoNothingAction
-		b.postOpenResetAction = postOpenResetTransitionAction
-		b.openExpiresAt = b.opts.nowFactory.Get().Add(b.opts.OpenDuration)
-		return func() {
-			b.notifyStateChanged(StateOpen)
+func (b *Breaker) transitionToClosedIfShould() {
+	afterUnlock := doNothing
+	b.mu.Lock()
+	defer func() {
+		b.mu.Unlock()
+		afterUnlock()
+	}()
+	// are we still recorded as being in the open state?
+	if b.state == StateOpen {
+		// perform the transition exactly once for this round
+		b.state = StateClosed
+		afterUnlock = func() {
+			b.notifyStateChanged(StateClosed)
 		}
 	}
-	return doNothing
 }
 
-func postCloseTripDoNothingAction(_ *Breaker, _ error) (afterUnlock func()) {
-	return doNothing
+func (b *Breaker) recordErrorAndTransitionToOpenIfShould(err error) {
+	b.mu.Lock()
+	afterUnlock := doNothing
+	defer func() {
+		b.mu.Unlock()
+		afterUnlock()
+	}()
+
+	// record the error
+	errorRateWithinLimits := b.opts.FailureLimiter.Allowed(errorCost)
+
+	if b.state != StateClosed || errorRateWithinLimits {
+		// already transitioned state to open OR
+		// error rate not yet exceeded, no need to transition
+		return
+	}
+
+	// transition to the Open State
+	b.lastError = err
+	b.state = StateOpen
+	b.openExpiresAt = b.opts.nowFactory.Get().Add(b.opts.OpenDuration)
+	afterUnlock = func() {
+		b.notifyStateChanged(StateOpen)
+	}
 }
 
 func (b *Breaker) notifyStateChanged(newState State) {
 	if b.opts.OnStateChange != nil {
 		b.opts.OnStateChange <- newState
 	}
-}
-
-func stateOpen(b *stateContext) error {
-	b.breaker.mu.RLock()
-	if b.breaker.openExpiresAt.After(b.breaker.opts.nowFactory.Get()) {
-		// Still open, return the last error
-		b.breaker.mu.RUnlock()
-		return b.breaker.lastError
-	}
-	b.breaker.mu.RUnlock()
-
-	afterUnlock := doNothing
-	b.breaker.mu.Lock()
-	defer func() {
-		b.breaker.mu.Unlock()
-		afterUnlock()
-	}()
-	afterUnlock = b.breaker.postOpenResetAction(b.breaker)
-	return nil
-}
-
-func postOpenResetTransitionAction(breaker *Breaker) (afterUnlock func()) {
-	breaker.state = stateClosed
-	breaker.postCloseTripAction = postCloseTripTransitionAction
-	breaker.postOpenResetAction = postOpenDoNothingAction
-	return func() {
-		breaker.notifyStateChanged(StateClosed)
-	}
-}
-
-func postOpenDoNothingAction(_ *Breaker) (afterUnlock func()) {
-	return doNothing
 }
