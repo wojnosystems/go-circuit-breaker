@@ -2,7 +2,7 @@ package circuitHTTP
 
 import (
 	"errors"
-	"github.com/wojnosystems/go-circuit-breaker/circuitTripping"
+	"github.com/wojnosystems/go-circuit-breaker/tripping"
 	"io"
 	"net/http"
 	"net/url"
@@ -18,12 +18,12 @@ type Breaker interface {
 func defaultTrippedDecision(resp *http.Response, err error) error {
 	// all errors trip the breaker
 	if err != nil {
-		return circuitTripping.New(err)
+		return tripping.New(err)
 	}
 	switch resp.StatusCode {
 	// TODO: custom errors for each condition
 	case http.StatusBadGateway, http.StatusInternalServerError, http.StatusRequestTimeout, http.StatusServiceUnavailable, http.StatusTooManyRequests:
-		return circuitTripping.New(errors.New("upstream service is down or is rateLimit-limiting"))
+		return tripping.New(errors.New("upstream service is down or is rateLimit-limiting"))
 	default:
 		return nil
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"github.com/wojnosystems/go-circuit-breaker/circuitHTTP"
+	"github.com/wojnosystems/go-circuit-breaker/tripping"
 	"github.com/wojnosystems/go-circuit-breaker/twoStateCircuit"
 	"github.com/wojnosystems/go-rate-limit/rateLimit"
 	"io/ioutil"
@@ -12,12 +13,15 @@ import (
 )
 
 func main() {
+	tokenBucket := rateLimit.NewTokenBucket(rateLimit.TokenBucketOpts{
+		Capacity:             2,
+		TokensAddedPerSecond: 2,
+		InitialTokens:        2,
+	})
 	breaker := twoStateCircuit.New(twoStateCircuit.Opts{
-		FailureLimiter: rateLimit.NewTokenBucket(rateLimit.TokenBucketOpts{
-			Capacity:             2,
-			TokensAddedPerSecond: 2,
-			InitialTokens:        2,
-		}),
+		TripDecider: func(trippingErr *tripping.Error) (shouldTrip bool) {
+			return !tokenBucket.Allowed(trippingErr.Cost)
+		},
 		OpenDuration: 30 * time.Second,
 	})
 	s := &SDK{

@@ -1,25 +1,19 @@
 package twoStateCircuit
 
 import (
-	"github.com/wojnosystems/go-circuit-breaker/circuitTripping"
+	"github.com/wojnosystems/go-circuit-breaker/tripping"
 	"github.com/wojnosystems/go-time-factory/timeFactory"
 	"sync"
 	"time"
 )
-
-const errorCost = 1
 
 type Limiter interface {
 	Allowed(tokenCost uint64) bool
 }
 
 type Opts struct {
-	// FailureLimiter is a rate limiter called each time an error occurs while in the ClosedState
-	// After the rate is exceeded, the breaker will enter the OpenState.
-	// This is required to prevent the breaker from remaining in the OpenState and allowing an error budget before
-	// tripping. This must be set.
-	// This limiter should not be shared with any other go routines as this needs to be locked to prevent race conditions
-	FailureLimiter Limiter
+	// TripDecider is consulted each time a tripping error occurs.
+	TripDecider tripping.Decider
 
 	// OpenDuration is how long to stay in the OpenState before closing again
 	OpenDuration time.Duration
@@ -73,15 +67,16 @@ func (b *Breaker) Use(callback func() error) error {
 
 	// at this point, we have either returned or we're in the closed state
 	err := callback()
-	if !circuitTripping.IsTripping(err) {
+	if !tripping.IsTripping(err) {
 		// error was nil or not tripping, just return
 		return err
 	}
 
-	unwrappedError := err.(*circuitTripping.Error).Unwrap()
+	trippingError := err.(*tripping.Error)
+	unwrappedError := err.(*tripping.Error).Err
 
 	// we encountered an error, we need to count this against our error threshold and transition if need be
-	b.recordErrorAndTransitionToOpenIfShould(unwrappedError)
+	b.recordErrorAndTransitionToOpenIfShould(trippingError)
 	return unwrappedError
 }
 
@@ -114,7 +109,7 @@ func (b *Breaker) transitionToClosedIfShould() {
 	}
 }
 
-func (b *Breaker) recordErrorAndTransitionToOpenIfShould(err error) {
+func (b *Breaker) recordErrorAndTransitionToOpenIfShould(trippingError *tripping.Error) {
 	b.mu.Lock()
 	afterUnlock := doNothing
 	defer func() {
@@ -123,7 +118,7 @@ func (b *Breaker) recordErrorAndTransitionToOpenIfShould(err error) {
 	}()
 
 	// record the error
-	errorRateWithinLimits := b.opts.FailureLimiter.Allowed(errorCost)
+	errorRateWithinLimits := !b.opts.TripDecider.ShouldTrip(trippingError)
 
 	if b.state != StateClosed || errorRateWithinLimits {
 		// already transitioned state to open OR
@@ -132,7 +127,7 @@ func (b *Breaker) recordErrorAndTransitionToOpenIfShould(err error) {
 	}
 
 	// transition to the Open State
-	b.lastError = err
+	b.lastError = trippingError.Err
 	b.state = StateOpen
 	b.openExpiresAt = b.opts.nowFactory.Get().Add(b.opts.OpenDuration)
 	afterUnlock = func() {

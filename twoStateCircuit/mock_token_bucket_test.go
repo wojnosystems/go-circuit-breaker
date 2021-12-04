@@ -1,13 +1,7 @@
 package twoStateCircuit
 
-type tokenBucketAlwaysFails struct{}
+import "github.com/wojnosystems/go-circuit-breaker/tripping"
 
-func (b *tokenBucketAlwaysFails) Allowed(_ uint64) bool {
+func neverTrips(_ *tripping.Error) bool {
 	return false
-}
-
-type tokenBucketAlwaysSucceeds struct{}
-
-func (s *tokenBucketAlwaysSucceeds) Allowed(_ uint64) bool {
-	return true
 }

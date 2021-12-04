@@ -4,11 +4,11 @@ import (
 	"errors"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/wojnosystems/go-circuit-breaker/circuitTripping"
+	"github.com/wojnosystems/go-circuit-breaker/tripping"
 	"time"
 )
 
-var trippingError = circuitTripping.New(errors.New("tripping error"))
+var trippingError = tripping.New(errors.New("tripping error"))
 
 var _ = Describe("Breaker.Use", func() {
 	When("used without errors", func() {
@@ -19,9 +19,9 @@ var _ = Describe("Breaker.Use", func() {
 		BeforeEach(func() {
 			stateChange = make(chan State, 10)
 			subject = New(Opts{
-				FailureLimiter: &tokenBucketAlwaysSucceeds{},
-				OpenDuration:   1 * time.Hour,
-				OnStateChange:  stateChange,
+				TripDecider:   neverTrips,
+				OpenDuration:  1 * time.Hour,
+				OnStateChange: stateChange,
 			})
 
 			for i := 0; i < 10; i++ {
@@ -51,9 +51,9 @@ var _ = Describe("Breaker.Use", func() {
 			startTime = time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC)
 			stateChange = make(chan State, 10)
 			options = Opts{
-				FailureLimiter: &tokenBucketAlwaysSucceeds{},
-				OpenDuration:   50 * time.Millisecond,
-				OnStateChange:  stateChange,
+				TripDecider:   neverTrips,
+				OpenDuration:  50 * time.Millisecond,
+				OnStateChange: stateChange,
 				nowFactory: func() time.Time {
 					return startTime
 				},
@@ -87,9 +87,8 @@ var _ = Describe("Breaker.Use", func() {
 			startTime = time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC)
 			stateChange = make(chan State, 10)
 			options = Opts{
-				FailureLimiter: &tokenBucketAlwaysFails{},
-				OpenDuration:   50 * time.Millisecond,
-				OnStateChange:  stateChange,
+				OpenDuration:  50 * time.Millisecond,
+				OnStateChange: stateChange,
 				nowFactory: func() time.Time {
 					return startTime
 				},
@@ -110,7 +109,7 @@ var _ = Describe("Breaker.Use", func() {
 				})
 			})
 			It("returns the last error", func() {
-				Expect(err).Should(Equal(trippingError.Unwrap()))
+				Expect(err).Should(Equal(trippingError.Err))
 			})
 		})
 		It("notifies state is open", func() {
