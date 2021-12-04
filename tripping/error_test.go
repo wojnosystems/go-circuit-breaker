@@ -31,7 +31,7 @@ func TestError_Error(t *testing.T) {
 	}
 	for caseName, dt := range cases {
 		t.Run(caseName, func(t *testing.T) {
-			g := NewGomegaWithT(t)
+			g := NewWithT(t)
 			actual := dt.builder()
 			g.Expect(actual.Error()).Should(Equal(dt.expected))
 			g.Expect(actual.Cost).Should(Equal(dt.expectedCost))
@@ -55,7 +55,7 @@ func TestIsTripping(t *testing.T) {
 	}
 	for caseName, dt := range cases {
 		t.Run(caseName, func(t *testing.T) {
-			g := NewGomegaWithT(t)
+			g := NewWithT(t)
 			actual := IsTripping(dt.input)
 			g.Expect(actual).Should(Equal(dt.expected))
 		})

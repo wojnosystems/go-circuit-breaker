@@ -7,10 +7,6 @@ import (
 	"time"
 )
 
-type Limiter interface {
-	Allowed(tokenCost uint64) bool
-}
-
 type Opts struct {
 	// TripDecider is consulted each time a tripping error occurs.
 	TripDecider tripping.Decider

@@ -21,7 +21,7 @@ func TestDecider_ShouldTrip(t *testing.T) {
 	}
 	for caseName, dt := range cases {
 		t.Run(caseName, func(t *testing.T) {
-			g := NewGomegaWithT(t)
+			g := NewWithT(t)
 			actual := dt.input.ShouldTrip(New(wrappedError))
 			g.Expect(actual).Should(Equal(dt.expected))
 		})
