@@ -48,6 +48,8 @@ func New(opts Opts) *Breaker {
 
 // Use the breaker, if closed, attempt the callback, if open, return the last error
 // automatically transitions state if necessary
+// callbacks can be called concurrently. Use will not block while the callback is being executed.
+// This does mean that sometimes, callbacks will be called while the breaker has already tripped.
 func (b *Breaker) Use(callback func() error) error {
 	{
 		stateCopy, now := b.copyCurrentState()
@@ -96,7 +98,7 @@ func (b *Breaker) transitionToClosedIfShould() {
 		afterUnlock()
 	}()
 	// are we still recorded as being in the open state?
-	if b.state == StateOpen {
+	if b.state == StateOpen && b.opts.nowFactory.Get().After(b.openExpiresAt) {
 		// perform the transition exactly once for this round
 		b.state = StateClosed
 		afterUnlock = func() {

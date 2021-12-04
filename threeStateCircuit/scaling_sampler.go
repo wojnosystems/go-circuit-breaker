@@ -38,3 +38,10 @@ func NewLinearScalingSampler(scaleOverDuration time.Duration, maximumChance floa
 		return randomValue < chancePercent
 	}
 }
+
+// NewLinearScalingSamplerWithStandardRandom works exactly like NewLinearScalingSampler, but
+// the randomSource is math.Random seeded with the current time.
+// This is a convenience method.
+func NewLinearScalingSamplerWithStandardRandom(scaleOverDuration time.Duration, maximumChance float64) ShouldSample {
+	return NewLinearScalingSampler(scaleOverDuration, maximumChance, rand.NewSource(time.Now().UnixNano()))
+}

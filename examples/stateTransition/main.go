@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/wojnosystems/go-circuit-breaker/circuitHTTP"
-	"github.com/wojnosystems/go-circuit-breaker/tripping"
 	"github.com/wojnosystems/go-circuit-breaker/twoStateCircuit"
 	"github.com/wojnosystems/go-rate-limit/rateLimit"
 	"log"
@@ -11,6 +10,7 @@ import (
 )
 
 func main() {
+	// stateTransition is a channel that will receive events when the state changes.
 	stateTransition := make(chan twoStateCircuit.State, 10)
 	go func() {
 		for {
@@ -22,20 +22,25 @@ func main() {
 		}
 	}()
 
-	tokenBucket := rateLimit.NewTokenBucket(rateLimit.TokenBucketOpts{
-		Capacity:             2,
-		TokensAddedPerSecond: 2,
-		InitialTokens:        2,
-	})
-	breaker := twoStateCircuit.New(twoStateCircuit.Opts{
-		TripDecider: func(trippingErr *tripping.Error) (shouldTrip bool) {
-			return !tokenBucket.Allowed(trippingErr.Cost)
+	breaker := twoStateCircuit.New(twoStateCircuit.OptsWithTokenBucketTripDecider(
+		twoStateCircuit.Opts{
+			OpenDuration: 30 * time.Second,
+			// OnStateChange is assigned the channel from above, this is how we tell the breaker to send events
+			OnStateChange: stateTransition,
 		},
-		OpenDuration:  30 * time.Second,
-		OnStateChange: stateTransition,
-	})
+		tokenBucketOptions,
+	))
 	client := circuitHTTP.New(breaker, http.DefaultClient)
 
 	_, _ = client.Get("https://example.com/api/things/1")
 	// do more things with the breaker
+}
+
+var tokenBucketOptions = rateLimit.TokenBucketOpts{
+	// We only allow up to 2 errors per second
+	Capacity:             2,
+	TokensAddedPerSecond: 2,
+	// Prime the breaker with 2 errors allowed at start, you could set this to 0 and force the breaker
+	// to "charge" before use
+	InitialTokens: 2,
 }

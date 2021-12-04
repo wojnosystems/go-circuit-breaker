@@ -55,8 +55,20 @@ func New(opts Opts) *Breaker {
 	}
 }
 
-// Use the breaker, if closed, attempt the callback, if open, return the last error
-// automatically transitions state if necessary
+// Use the breaker, if Closed, attempt the callback, if Open, return the last error. After being in the open state
+// until openExpiresAt, the breaker will transition to Half-Open. A subset of requests as dictated by HalfOpenSampler
+// will be attempted. If the number of successful attempts meets or exceeds the NumberOfSuccessesInHalfOpenToClose,
+// the breaker will transition back to the Closed state, in which all requests will be attempted.
+// If, when in the HalfOpen state, an error occurs, the breaker will re-enter the Open state.
+//
+// callback can return any error, but only errors wrapped in tripping.New() will be counted when deciding whether to trip
+// the breaker or transition back to the Open state from the HalfOpen state. All other errors will be returned without
+// contributing to the breaker's error limits.
+// When in the Open or HalfOpen state, Use will always return the error that tripped the breaker. If, while in the
+// HalfOpen state, the request is sampled, you could see a new error or nil, depending on whether the request
+// was allowed to run.
+// callbacks can be called concurrently. Use will not block while the callback is being executed.
+// This does mean that sometimes, callbacks will be called while the breaker has already tripped.
 func (b *Breaker) Use(callback func() error) error {
 	stateCopy, now := b.copyCurrentState()
 	if stateCopy.state == StateOpen {
@@ -105,8 +117,7 @@ func (b *Breaker) copyCurrentState() (currentState mutableState, now time.Time) 
 	return
 }
 
-func doNothing() {}
-
+// transitionToHalfOpenIfShould moves the Breaker to the HalfOpen state safely.
 func (b *Breaker) transitionToHalfOpenIfShould() mutableState {
 	afterUnlock := doNothing
 	b.mu.Lock()
@@ -114,8 +125,8 @@ func (b *Breaker) transitionToHalfOpenIfShould() mutableState {
 		b.mu.Unlock()
 		afterUnlock()
 	}()
-	// are we still recorded as being in the open state?
-	if b.state == StateOpen {
+	// are we still recorded as being in the open state and we should transition?
+	if b.state == StateOpen && b.opts.nowFactory.Get().After(b.openExpiresAt) {
 		// perform the transition exactly once for this round
 		b.state = StateHalfOpen
 		b.halfOpenAt = b.opts.nowFactory.Get()
@@ -127,6 +138,10 @@ func (b *Breaker) transitionToHalfOpenIfShould() mutableState {
 	return b.mutableState
 }
 
+// doNothing is a placeholder for a no-op
+func doNothing() {}
+
+// recordErrorAndTransitionToOpenIfShould will transition to the Open state if the breaker should trip
 func (b *Breaker) recordErrorAndTransitionToOpenIfShould(trippingError *tripping.Error) {
 	b.mu.Lock()
 	afterUnlock := doNothing
@@ -158,12 +173,16 @@ func (b *Breaker) recordErrorAndTransitionToOpenIfShould(trippingError *tripping
 	}
 }
 
+// notifyStateChanged will emit the newState if a OnStateChange listener was registered
 func (b *Breaker) notifyStateChanged(newState State) {
 	if b.opts.OnStateChange != nil {
 		b.opts.OnStateChange <- newState
 	}
 }
 
+// recordSuccessAndTransitionToClosedIfShould moves from HalfOpen to Closed.
+// This method assumes that it's being called if and only if a sample succeeded while in the HalfOpen state
+//
 func (b *Breaker) recordSuccessAndTransitionToClosedIfShould() {
 	afterUnlock := doNothing
 	b.mu.Lock()
