@@ -72,5 +72,4 @@ func TestConvertToTrippingErrIfShould_ConvertToTrippingErrIfShould(t *testing.T)
 			g.Expect(actual).Should(Equal(dt.expectedErr))
 		})
 	}
-
 }
