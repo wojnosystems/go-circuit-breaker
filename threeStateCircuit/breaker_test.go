@@ -4,6 +4,7 @@ import (
 	"errors"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/wojnosystems/go-circuit-breaker/threeStateCircuit/state"
 	"github.com/wojnosystems/go-circuit-breaker/tripping"
 	"time"
 )
@@ -19,10 +20,10 @@ func samplerNeverSamples(timeInHalfOpen time.Duration) bool {
 
 var _ = Describe("Breaker.Use", func() {
 	var (
-		stateChange chan State
+		stateChange chan state.State
 	)
 	BeforeEach(func() {
-		stateChange = make(chan State, 10)
+		stateChange = make(chan state.State, 10)
 	})
 	When("closed", func() {
 		var (
@@ -59,14 +60,14 @@ var _ = Describe("Breaker.Use", func() {
 					_ = breaker.Use(func() error {
 						return trippingError
 					})
-					Expect(stateChange).Should(Receive(Equal(StateOpen)))
+					Expect(stateChange).Should(Receive(Equal(state.Open)))
 				})
 			})
 
 			When("open transition occurred while testing", func() {
 				It("does not transition", func() {
 					_ = breaker.Use(func() error {
-						breaker.state = StateOpen
+						breaker.state = state.Open
 						return trippingError
 					})
 					Eventually(stateChange).ShouldNot(Receive())
@@ -88,7 +89,7 @@ var _ = Describe("Breaker.Use", func() {
 				HalfOpenSampler:                    samplerAlwaysSamples,
 				NumberOfSuccessesInHalfOpenToClose: 10,
 			})
-			breaker.state = StateOpen
+			breaker.state = state.Open
 			breaker.openExpiresAt = time.Now()
 			breaker.lastError = trippingError.Err
 		})
@@ -114,7 +115,7 @@ var _ = Describe("Breaker.Use", func() {
 				_ = breaker.Use(func() error {
 					return nil
 				})
-				Expect(stateChange).Should(Receive(Equal(StateHalfOpen)))
+				Expect(stateChange).Should(Receive(Equal(state.HalfOpen)))
 			})
 		})
 	})
@@ -132,7 +133,7 @@ var _ = Describe("Breaker.Use", func() {
 				HalfOpenSampler:                    samplerAlwaysSamples,
 				NumberOfSuccessesInHalfOpenToClose: 1,
 			})
-			breaker.state = StateHalfOpen
+			breaker.state = state.HalfOpen
 			breaker.halfOpenAt = time.Now()
 			breaker.lastError = trippingError.Err
 		})
@@ -158,7 +159,7 @@ var _ = Describe("Breaker.Use", func() {
 				_ = breaker.Use(func() error {
 					return nil
 				})
-				Expect(stateChange).Should(Receive(Equal(StateClosed)))
+				Expect(stateChange).Should(Receive(Equal(state.Closed)))
 			})
 		})
 	})

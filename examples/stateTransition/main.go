@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/wojnosystems/go-circuit-breaker/circuitHTTP"
 	"github.com/wojnosystems/go-circuit-breaker/twoStateCircuit"
+	"github.com/wojnosystems/go-circuit-breaker/twoStateCircuit/state"
 	"github.com/wojnosystems/go-rate-limit/rateLimit"
 	"log"
 	"net/http"
@@ -11,7 +12,7 @@ import (
 
 func main() {
 	// stateTransition is a channel that will receive events when the state changes.
-	stateTransition := make(chan twoStateCircuit.State, 10)
+	stateTransition := make(chan state.State, 10)
 	go func() {
 		for {
 			newState, ok := <-stateTransition

@@ -1,4 +1,4 @@
-package threeStateCircuit
+package halfOpenSampler
 
 import (
 	. "github.com/onsi/gomega"

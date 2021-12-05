@@ -1,6 +1,7 @@
-package threeStateCircuit
+package halfOpenSampler
 
 import (
+	"github.com/wojnosystems/go-circuit-breaker/threeStateCircuit"
 	"math/rand"
 	"sync"
 	"time"
@@ -24,7 +25,7 @@ import (
 // Example:
 // sampler := NewLinearScalingSampler(30 * time.Second, 0.25, rand.NewSource(time.Now().UnixNano()))
 // sampler.ShouldSample(timeInHalfOpen) -> true/false
-func NewLinearScalingSampler(scaleOverDuration time.Duration, maximumChance float64, randomSource rand.Source) ShouldSample {
+func NewLinearScalingSampler(scaleOverDuration time.Duration, maximumChance float64, randomSource rand.Source) threeStateCircuit.ShouldSample {
 	randSource := rand.New(randomSource)
 	var mu sync.Mutex
 	return func(timeInHalfOpen time.Duration) (shouldSample bool) {
@@ -42,6 +43,6 @@ func NewLinearScalingSampler(scaleOverDuration time.Duration, maximumChance floa
 // NewLinearScalingSamplerWithStandardRandom works exactly like NewLinearScalingSampler, but
 // the randomSource is math.Random seeded with the current time.
 // This is a convenience method.
-func NewLinearScalingSamplerWithStandardRandom(scaleOverDuration time.Duration, maximumChance float64) ShouldSample {
+func NewLinearScalingSamplerWithStandardRandom(scaleOverDuration time.Duration, maximumChance float64) threeStateCircuit.ShouldSample {
 	return NewLinearScalingSampler(scaleOverDuration, maximumChance, rand.NewSource(time.Now().UnixNano()))
 }

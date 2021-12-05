@@ -105,6 +105,7 @@ package main
 import (
 	"github.com/wojnosystems/go-circuit-breaker/circuitHTTP"
 	"github.com/wojnosystems/go-circuit-breaker/twoStateCircuit"
+	"github.com/wojnosystems/go-circuit-breaker/twoStateCircuit/state"
 	"github.com/wojnosystems/go-rate-limit/rateLimit"
 	"log"
 	"net/http"
@@ -113,7 +114,7 @@ import (
 
 func main() {
 	// stateTransition is a channel that will receive events when the state changes.
-	stateTransition := make(chan twoStateCircuit.State, 10)
+	stateTransition := make(chan state.State, 10)
 	go func() {
 		for {
 			newState, ok := <-stateTransition
@@ -162,6 +163,7 @@ package main
 
 import (
 	"github.com/wojnosystems/go-circuit-breaker/circuitHTTP"
+	"github.com/wojnosystems/go-circuit-breaker/halfOpenSampler"
 	"github.com/wojnosystems/go-circuit-breaker/threeStateCircuit"
 	"github.com/wojnosystems/go-rate-limit/rateLimit"
 	"net/http"
@@ -177,7 +179,7 @@ func main() {
 			// over the course of 60 seconds. When the breaker first enters Half-Open,
 			// the chance of being sampled is 0, slowly increasing to 50% once 60 seconds have passed
 			// Feel free to swap this out with whatever you need.
-			HalfOpenSampler: threeStateCircuit.NewLinearScalingSamplerWithStandardRandom(
+			HalfOpenSampler: halfOpenSampler.NewLinearScalingSamplerWithStandardRandom(
 				60*time.Second,
 				.5,
 			),
@@ -187,7 +189,7 @@ func main() {
 	))
 
 	httpClient := circuitHTTP.New(breaker, http.DefaultClient)
-	
+
 	httpClient.Get("https://www.example.com/broken")
 	httpClient.Get("https://www.example.com/broken")
 	httpClient.Get("https://www.example.com/broken")

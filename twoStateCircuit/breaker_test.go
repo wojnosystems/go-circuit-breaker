@@ -5,6 +5,8 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/wojnosystems/go-circuit-breaker/tripping"
+	"github.com/wojnosystems/go-circuit-breaker/twoStateCircuit/state"
+	"github.com/wojnosystems/go-time-factory/timeFactory"
 	"time"
 )
 
@@ -14,10 +16,10 @@ var _ = Describe("Breaker.Use", func() {
 	When("used without errors", func() {
 		var (
 			subject     *Breaker
-			stateChange chan State
+			stateChange chan state.State
 		)
 		BeforeEach(func() {
-			stateChange = make(chan State, 10)
+			stateChange = make(chan state.State, 10)
 			subject = New(Opts{
 				TripDecider:   neverTrips,
 				OpenDuration:  1 * time.Hour,
@@ -43,13 +45,13 @@ var _ = Describe("Breaker.Use", func() {
 	When("error threshold not met", func() {
 		var (
 			subject     *Breaker
-			stateChange chan State
+			stateChange chan state.State
 			options     Opts
 			startTime   time.Time
 		)
 		BeforeEach(func() {
 			startTime = time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC)
-			stateChange = make(chan State, 10)
+			stateChange = make(chan state.State, 10)
 			options = Opts{
 				TripDecider:   neverTrips,
 				OpenDuration:  50 * time.Millisecond,
@@ -79,13 +81,13 @@ var _ = Describe("Breaker.Use", func() {
 	When("error threshold met", func() {
 		var (
 			subject     *Breaker
-			stateChange chan State
+			stateChange chan state.State
 			options     Opts
 			startTime   time.Time
 		)
 		BeforeEach(func() {
 			startTime = time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC)
-			stateChange = make(chan State, 10)
+			stateChange = make(chan state.State, 10)
 			options = Opts{
 				OpenDuration:  50 * time.Millisecond,
 				OnStateChange: stateChange,
@@ -113,21 +115,23 @@ var _ = Describe("Breaker.Use", func() {
 			})
 		})
 		It("notifies state is open", func() {
-			Expect(stateChange).Should(Receive(Equal(StateOpen)))
+			Expect(stateChange).Should(Receive(Equal(state.Open)))
 		})
 		When("open state time expires", func() {
 			BeforeEach(func() {
-				subject.opts.nowFactory = func() time.Time {
-					return startTime.Add(subject.opts.OpenDuration)
-				}
-				// receive state open notice
-				Expect(stateChange).Should(Receive(Equal(StateOpen)))
+				Expect(stateChange).Should(Receive(Equal(state.Open)))
+				subject.state = state.Open
+				subject.mutableState.openExpiresAt = time.Now().Add(-1 * time.Second)
+				subject.opts.nowFactory = timeFactory.ReturnTimes(
+					time.Now(),
+					time.Now(),
+				)
 			})
-			It("notifies state is open", func() {
+			It("notifies state is closed", func() {
 				_ = subject.Use(func() error {
 					return nil
 				})
-				Expect(stateChange).Should(Receive(Equal(StateClosed)))
+				Expect(stateChange).Should(Receive(Equal(state.Closed)))
 			})
 		})
 	})

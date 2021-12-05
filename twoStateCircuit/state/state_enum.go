@@ -4,24 +4,24 @@
 // Build Date:
 // Built By:
 
-package twoStateCircuit
+package state
 
 import (
 	"fmt"
 )
 
 const (
-	// StateClosed is a State of type Closed.
-	StateClosed State = iota
-	// StateOpen is a State of type Open.
-	StateOpen
+	// Closed is a State of type Closed.
+	Closed State = iota
+	// Open is a State of type Open.
+	Open
 )
 
 const _StateName = "ClosedOpen"
 
 var _StateMap = map[State]string{
-	StateClosed: _StateName[0:6],
-	StateOpen:   _StateName[6:10],
+	Closed: _StateName[0:6],
+	Open:   _StateName[6:10],
 }
 
 // String implements the Stringer interface.
@@ -33,8 +33,8 @@ func (x State) String() string {
 }
 
 var _StateValue = map[string]State{
-	_StateName[0:6]:  StateClosed,
-	_StateName[6:10]: StateOpen,
+	_StateName[0:6]:  Closed,
+	_StateName[6:10]: Open,
 }
 
 // ParseState attempts to convert a string to a State

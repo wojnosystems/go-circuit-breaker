@@ -1,6 +1,7 @@
 package threeStateCircuit
 
 import (
+	"github.com/wojnosystems/go-circuit-breaker/threeStateCircuit/state"
 	"github.com/wojnosystems/go-circuit-breaker/tripping"
 	"github.com/wojnosystems/go-time-factory/timeFactory"
 	"sync"
@@ -17,7 +18,7 @@ type Opts struct {
 	// OnStateChange if set, will emit the state the breaker is transitioning into
 	// leaving as nil to avoid listening to state changes
 	// Do NOT close this channel or a panic will occur
-	OnStateChange chan<- State
+	OnStateChange chan<- state.State
 
 	// HalfOpenSampler tells the circuit breaker which requests to reject and which to attempt while in the half-open state
 	HalfOpenSampler ShouldSample
@@ -31,7 +32,7 @@ type Opts struct {
 }
 
 type mutableState struct {
-	state             State
+	state             state.State
 	lastError         error
 	openExpiresAt     time.Time
 	halfOpenAt        time.Time
@@ -50,7 +51,7 @@ func New(opts Opts) *Breaker {
 	return &Breaker{
 		opts: opts,
 		mutableState: mutableState{
-			state: StateClosed,
+			state: state.Closed,
 		},
 	}
 }
@@ -71,7 +72,7 @@ func New(opts Opts) *Breaker {
 // This does mean that sometimes, callbacks will be called while the breaker has already tripped.
 func (b *Breaker) Use(callback func() error) error {
 	stateCopy, now := b.copyCurrentState()
-	if stateCopy.state == StateOpen {
+	if stateCopy.state == state.Open {
 		if stateCopy.openExpiresAt.After(now) {
 			// still in the open state, not expired
 			return stateCopy.lastError
@@ -80,7 +81,7 @@ func (b *Breaker) Use(callback func() error) error {
 		stateCopy = b.transitionToHalfOpenIfShould()
 	}
 
-	if stateCopy.state == StateHalfOpen {
+	if stateCopy.state == state.HalfOpen {
 		if !b.opts.HalfOpenSampler.ShouldSample(b.opts.nowFactory.Get().Sub(stateCopy.halfOpenAt)) {
 			return b.lastError
 		}
@@ -92,7 +93,7 @@ func (b *Breaker) Use(callback func() error) error {
 		b.mu.RLock()
 		currentState := b.state
 		b.mu.RUnlock()
-		if currentState == StateHalfOpen {
+		if currentState == state.HalfOpen {
 			b.recordSuccessAndTransitionToClosedIfShould()
 		}
 		// error was nil or not tripping, just return
@@ -126,13 +127,13 @@ func (b *Breaker) transitionToHalfOpenIfShould() mutableState {
 		afterUnlock()
 	}()
 	// are we still recorded as being in the open state and we should transition?
-	if b.state == StateOpen && b.opts.nowFactory.Get().After(b.openExpiresAt) {
+	if b.state == state.Open && b.opts.nowFactory.Get().After(b.openExpiresAt) {
 		// perform the transition exactly once for this round
-		b.state = StateHalfOpen
+		b.state = state.HalfOpen
 		b.halfOpenAt = b.opts.nowFactory.Get()
 		b.halfOpenSuccesses = 0
 		afterUnlock = func() {
-			b.notifyStateChanged(StateHalfOpen)
+			b.notifyStateChanged(state.HalfOpen)
 		}
 	}
 	return b.mutableState
@@ -150,7 +151,7 @@ func (b *Breaker) recordErrorAndTransitionToOpenIfShould(trippingError *tripping
 		afterUnlock()
 	}()
 
-	if b.state == StateClosed {
+	if b.state == state.Closed {
 		// record the error
 		errorRateWithinLimits := !b.opts.TripDecider.ShouldTrip(trippingError)
 		if errorRateWithinLimits {
@@ -158,7 +159,7 @@ func (b *Breaker) recordErrorAndTransitionToOpenIfShould(trippingError *tripping
 		}
 	}
 
-	if b.state == StateOpen {
+	if b.state == state.Open {
 		// already transitioned state to open OR
 		// error rate not yet exceeded, no need to transition
 		return
@@ -166,15 +167,15 @@ func (b *Breaker) recordErrorAndTransitionToOpenIfShould(trippingError *tripping
 
 	// transition to the Open State
 	b.lastError = trippingError.Err
-	b.state = StateOpen
+	b.state = state.Open
 	b.openExpiresAt = b.opts.nowFactory.Get().Add(b.opts.OpenDuration)
 	afterUnlock = func() {
-		b.notifyStateChanged(StateOpen)
+		b.notifyStateChanged(state.Open)
 	}
 }
 
 // notifyStateChanged will emit the newState if a OnStateChange listener was registered
-func (b *Breaker) notifyStateChanged(newState State) {
+func (b *Breaker) notifyStateChanged(newState state.State) {
 	if b.opts.OnStateChange != nil {
 		b.opts.OnStateChange <- newState
 	}
@@ -191,13 +192,13 @@ func (b *Breaker) recordSuccessAndTransitionToClosedIfShould() {
 		afterUnlock()
 	}()
 	// are we still recorded as being in the open state?
-	if b.state == StateHalfOpen {
+	if b.state == state.HalfOpen {
 		b.halfOpenSuccesses++
 		if b.halfOpenSuccesses >= b.opts.NumberOfSuccessesInHalfOpenToClose {
 			// perform the transition exactly once for this round
-			b.state = StateClosed
+			b.state = state.Closed
 			afterUnlock = func() {
-				b.notifyStateChanged(StateClosed)
+				b.notifyStateChanged(state.Closed)
 			}
 		}
 	}

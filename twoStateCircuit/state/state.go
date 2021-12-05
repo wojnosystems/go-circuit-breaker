@@ -1,6 +1,6 @@
-//go:generate go-enum --file=$GOFILE -noprefix --prefix State
+//go:generate go-enum --file=$GOFILE -noprefix
 
-package twoStateCircuit
+package state
 
 // State allowed by the twoStateBreaker
 /* ENUM(

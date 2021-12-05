@@ -4,27 +4,27 @@
 // Build Date:
 // Built By:
 
-package threeStateCircuit
+package state
 
 import (
 	"fmt"
 )
 
 const (
-	// StateClosed is a State of type Closed.
-	StateClosed State = iota
-	// StateOpen is a State of type Open.
-	StateOpen
-	// StateHalfOpen is a State of type HalfOpen.
-	StateHalfOpen
+	// Closed is a State of type Closed.
+	Closed State = iota
+	// Open is a State of type Open.
+	Open
+	// HalfOpen is a State of type HalfOpen.
+	HalfOpen
 )
 
 const _StateName = "ClosedOpenHalfOpen"
 
 var _StateMap = map[State]string{
-	StateClosed:   _StateName[0:6],
-	StateOpen:     _StateName[6:10],
-	StateHalfOpen: _StateName[10:18],
+	Closed:   _StateName[0:6],
+	Open:     _StateName[6:10],
+	HalfOpen: _StateName[10:18],
 }
 
 // String implements the Stringer interface.
@@ -36,9 +36,9 @@ func (x State) String() string {
 }
 
 var _StateValue = map[string]State{
-	_StateName[0:6]:   StateClosed,
-	_StateName[6:10]:  StateOpen,
-	_StateName[10:18]: StateHalfOpen,
+	_StateName[0:6]:   Closed,
+	_StateName[6:10]:  Open,
+	_StateName[10:18]: HalfOpen,
 }
 
 // ParseState attempts to convert a string to a State
